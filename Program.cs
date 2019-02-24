@@ -7,23 +7,25 @@ using System.Windows.Forms;
 using System.Drawing;
 using System.Drawing.Imaging;
 using System.Runtime.InteropServices;
+using System.Threading;
 
 namespace Screenshot
 {
     class Program
     {
-        [STAThread]
         static void Main(string[] args)
         {
             ScreenCapture cap = new ScreenCapture();
-            IntPtr hwd = (IntPtr)263860;
+            IntPtr hwd = (IntPtr)5048990;
             StringBuilder title = new StringBuilder(256);
             User32.GetWindowText(hwd, title, title.Capacity);
             StringBuilder clsName = new StringBuilder(256);
             User32.GetClassName(hwd, clsName, clsName.Capacity);
             IntPtr hwdnew = User32.FindWindow(clsName.ToString(), title.ToString());
             Console.WriteLine(title.ToString() + "; " + clsName.ToString());
-            cap.CaptureAppWindowToFile(hwd, @"C:\Users\Johney_Local\Desktop\Screenshot\test.jpg", ImageFormat.Jpeg);
+            cap.ShowAppWindow(hwd);
+            cap.CaptureWindowFromTop(hwd, @"C:\Users\Johney_Local\Desktop\Screenshot\test.jpg", ImageFormat.Jpeg);
+            //cap.CaptureAppWindowToFile(hwd, @"C:\Users\Johney_Local\Desktop\Screenshot\test.jpg", ImageFormat.Jpeg);
         }
     }
 
@@ -96,6 +98,12 @@ namespace Screenshot
         public static extern IntPtr FindWindow(string lpClassName, string lpWindowName);
         [DllImport("user32.dll", EntryPoint = "FindWindow", SetLastError = true)]
         public static extern IntPtr FindWindowByCaption(int ZeroOnly, string lpWindowName);
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern uint GetWindowThreadProcessId(IntPtr hWnd, IntPtr ProcessId);
+        [DllImport("kernel32.dll", SetLastError = true)]
+        public static extern uint GetCurrentThreadId();
+        [DllImport("user32.dll", SetLastError = true)]
+        public static extern bool AttachThreadInput(uint idAttach, uint idAttachTo, bool fAttach);
     }
 
     /// <summary> 
@@ -162,6 +170,39 @@ namespace Screenshot
             return CaptureWindow(User32.GetDesktopWindow());
         }
 
+        public void ShowAppWindow(IntPtr handle)
+        {
+            const int HWND_BOTTOM = 1;
+            const int HWND_NOTOPMOST = -2;
+            const int HWND_TOP = 0;
+            const int HWND_TOPMOST = -1;
+
+            IntPtr hForeWnd = User32.GetForegroundWindow();
+            uint dwForeID = User32.GetWindowThreadProcessId(hForeWnd, IntPtr.Zero);
+            uint dwCurID = User32.GetCurrentThreadId();
+            User32.AttachThreadInput(dwCurID, dwForeID, true);
+            User32.ShowWindow(handle, User32.CMDSHOW.Normal);
+            Thread.Sleep(250);
+            User32.SetWindowPos(handle, HWND_TOPMOST, 0, 0, 0, 0, User32.UINT.SWP_NOSIZE | User32.UINT.SWP_NOMOVE);
+            User32.SetWindowPos(handle, HWND_NOTOPMOST, 0, 0, 0, 0, User32.UINT.SWP_NOSIZE | User32.UINT.SWP_NOMOVE);
+            User32.SetForegroundWindow(handle);
+            Thread.Sleep(250);
+            User32.AttachThreadInput(dwCurID, dwForeID, false);
+        }
+
+        public void CaptureWindowFromTop(IntPtr handle, string saveLocation, ImageFormat format)
+        {
+            Rectangle rect = new Rectangle();
+            User32.GetWindowRect(handle, out rect);
+            Image img = new Bitmap(rect.Width - rect.X, rect.Height - rect.Y);
+            Graphics graph = Graphics.FromImage(img);
+            graph.CopyFromScreen(rect.X, rect.Y, 0, 0, Screen.FromHandle(handle).Bounds.Size);
+            img.Save(saveLocation, format);
+
+            graph.Dispose();
+            img.Dispose();
+        }
+
         /// <summary> 
         /// Creates an Image object containing a screen shot of a specific window 
         /// </summary> 
@@ -169,12 +210,6 @@ namespace Screenshot
         /// <returns></returns> 
         private Image CaptureWindow(IntPtr handle)
         {
-            // Show the window at first
-            //User32.SetWindowPos(handle, 0, 0, 0, 0, 0, User32.UINT.SWP_SHOWWINDOW | User32.UINT.SWP_NOSIZE);
-            User32.ShowWindow(handle, User32.CMDSHOW.Maximize);
-            //User32.SetForegroundWindow(handle);
-            //User32.SetActiveWindow(handle);
-
             // get te hDC of the target window 
             IntPtr hdcSrc = User32.GetWindowDC(handle);
             // get the size 
